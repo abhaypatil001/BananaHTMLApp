@@ -33,9 +33,14 @@ jobs:
           npm init -y
           npm install @capacitor/core@latest @capacitor/android@latest
 
+      - name: Prepare web assets
+        run: |
+          mkdir -p www
+          cp index.html logo.png splash.png www/
+
       - name: Init and add Android platform
         run: |
-          npx cap init "Banana Hisab" "com.bananahisab.app" --web-dir .
+          npx cap init "Banana Hisab" "com.bananahisab.app" --web-dir www
           npx cap add android
 
       - name: Copy web assets
