@@ -36,7 +36,7 @@ jobs:
       - name: Prepare web assets
         run: |
           mkdir -p www
-          cp index.html logo.png splash.png www/
+          cp index.html logo.png splash.png html2canvas.min.js www/
 
       - name: Init and add Android platform
         run: |
