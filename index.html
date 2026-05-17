@@ -573,10 +573,10 @@ html,body{height:100%;overflow:hidden;background:#F3F4F6;font-family:'Segoe UI',
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         Share
       </button>
-      <button class="btn btn-danger" style="flex:1;padding:11px 4px;font-size:13px" onclick="deleteTxn()">
+      <button class="btn btn-danger" id="txn-delete-btn" style="flex:1;padding:11px 4px;font-size:13px" onclick="deleteTxn()">
         Delete
       </button>
-      <button class="btn btn-primary" style="flex:1;padding:11px 4px;font-size:13px" onclick="loadTxnToCalc()">
+      <button class="btn btn-primary" id="txn-edit-btn" style="flex:1;padding:11px 4px;font-size:13px" onclick="loadTxnToCalc()">
         Edit
       </button>
     </div>
@@ -788,6 +788,8 @@ function renderHistory(){
 function openTxn(id){
   const t=loadTxns().find(x=>x.id===id);if(!t)return;
   currentTxnId=id;
+  document.getElementById('txn-delete-btn').style.display='';
+  document.getElementById('txn-edit-btn').style.display='';
   set('txn-party',t.party);set('txn-date',fmtDateLong(t.date));set('txn-total','₹'+t.total.toLocaleString('en-IN'));
   const rows=[['Gross Weight',t.gw.toFixed(2)+' QTL'],['Rate','₹'+t.rate+'/QTL'],['Patti ('+t.pd+')',t.pw.toFixed(2)+' QTL'],['Net Weight',t.nw.toFixed(2)+' QTL'],['Danda Rate',t.dr.toFixed(2)+' Kg/QTL'],['Danda Weight',t.dw.toFixed(2)+' QTL'],['Net Wt. with Danda',t.nwd.toFixed(2)+' QTL'],'---',['Amount','₹'+fmt(t.amt)],['Commission','₹'+fmt(t.com)],['Majuri','₹'+fmt(t.maj)]];
   sEl('txn-rows').innerHTML=rows.map(r=>r==='---'?'<div class="divider"></div>':`<div class="res-row"><span class="rl">${r[0]}</span><span class="rv">${r[1]}</span></div>`).join('');
@@ -917,7 +919,16 @@ function generatePDF(t) {
 }
 
 function doPrint() {
-  window.print();
+  var t = window._currentReceiptTxn;
+  var content = document.getElementById('printContent');
+  if (typeof html2canvas !== 'undefined' && content) {
+    toast('Saving image…');
+    html2canvas(content, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false })
+      .then(function(canvas) { _downloadImage(canvas, t || {}); })
+      .catch(function() { toast('Save failed'); });
+  } else {
+    window.print(); // browser fallback
+  }
 }
 
 function closePrintOverlay() {
@@ -1049,6 +1060,9 @@ function openPartyDetail(pid){
   currentTxnId=null;
   set('txn-party',p.name);set('txn-date','Since '+fmtDateShort(p.since)+(p.phone?' · '+p.phone:''));set('txn-total','₹'+total.toLocaleString('en-IN'));
   sEl('txn-rows').innerHTML=`<div class="stats-row" style="margin-bottom:12px"><div class="stat-box"><div class="sv">${txns.length}</div><div class="sl">Transactions</div></div><div class="stat-box"><div class="sv">${avgW.toFixed(2)}</div><div class="sl">Avg QTL</div></div><div class="stat-box"><div class="sv">₹${(total/1000).toFixed(1)}K</div><div class="sl">Total</div></div></div>`+txns.slice(0,8).map(t=>`<div class="hist-item" style="margin-bottom:8px" onclick="closeSheet('txnOverlay');openTxn('${t.id}')"><div class="hist-avatar" style="width:36px;height:36px;font-size:12px">${t.party.charAt(0)}</div><div class="hist-info"><div class="hname" style="font-size:13px">${fmtDate(t.date)}</div><div class="hmeta">₹${t.rate}/QTL</div></div><div class="hist-right"><div class="hamount">₹${t.total.toLocaleString('en-IN')}</div><div class="hwt">${t.nwd.toFixed(2)} QTL</div></div></div>`).join('');
+  // Party summary view — no single txn selected, hide Edit/Delete
+  document.getElementById('txn-delete-btn').style.display='none';
+  document.getElementById('txn-edit-btn').style.display='none';
   openSheet('txnOverlay');
 }
 function rebuildSuggestions(){const dl=sEl('party-suggestions');if(dl)dl.innerHTML=loadParties().map(p=>`<option value="${esc(p.name)}">`).join('');}
@@ -1118,9 +1132,35 @@ document.addEventListener('input',function(e){
 sEl('dandaType').addEventListener('change',()=>{const gw=nv('netWeightPatti'),rate=nv('rate');if(gw&&rate)calculate();});
 
 // ─── INIT ───
-applySettings(loadSettings());
-rebuildSuggestions();
-updateBadge();
+function _init() {
+  applySettings(loadSettings());
+  rebuildSuggestions();
+  updateBadge();
+
+  // Android hardware back button (Capacitor)
+  document.addEventListener('backbutton', function(e) {
+    e.preventDefault();
+    // Close any open overlay first
+    const overlays = ['shareSheetOverlay','settingsOverlay','txnOverlay','addPartyOverlay','printOverlay'];
+    for (var i = 0; i < overlays.length; i++) {
+      var el = document.getElementById(overlays[i]);
+      if (el && (el.classList.contains('open') || el.style.display === 'block')) {
+        if (overlays[i] === 'printOverlay') closePrintOverlay();
+        else closeSheet(overlays[i]);
+        return;
+      }
+    }
+    // Navigate back to home if not already there
+    var active = document.querySelector('.screen.active');
+    if (active && active.id !== 'screen-home') openScreen('screen-home');
+    // else: let the app stay open (do not exit)
+  }, false);
+}
+
+// Capacitor/Cordova fires 'deviceready'; plain browser never fires it
+document.addEventListener('deviceready', _init, false);
+// Fallback for browser testing
+if (!window.cordova) document.addEventListener('DOMContentLoaded', _init, false);
 </script>
 
 <!-- ══ SHARE SHEET ══ -->
